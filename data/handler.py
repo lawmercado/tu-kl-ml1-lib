@@ -3,6 +3,7 @@
 import random
 import pandas as pd
 import math
+from liblinearutil import problem
 
 
 class DataHandler:
@@ -10,7 +11,7 @@ class DataHandler:
     __data_frame = None
     __class_attr = None
 
-    def __init__(self, data_frame, class_attr):
+    def __init__(self, data_frame, class_attr, reset_index=True):
         """
         Handler for Pandas DataFrame manipulation
 
@@ -19,7 +20,9 @@ class DataHandler:
         assert isinstance(data_frame, pd.DataFrame), 'Data frame must be an instance of Pandas DataFrame'
 
         copy = data_frame.copy(deep=True)
-        copy.reset_index(drop=True)
+
+        if reset_index:
+            copy.reset_index(drop=True)
 
         self.__data_frame = copy
         self.__class_attr = class_attr
@@ -94,3 +97,41 @@ class DataHandler:
                 counter -= 1
 
         return [pd.DataFrame(data=raw_folds[idx_fold]) for idx_fold in range(0, num_folds)]
+
+    def normalize_min_max(self, a, b):
+        copy = self.get_data_frame()
+        target_columns = copy.columns != self.get_class_attr()
+        targets = copy.iloc[:, target_columns]
+
+        copy.iloc[:, target_columns] = (((b - a) * (targets - targets.min())) / (targets.max() - targets.min())) + a
+        self.__data_frame = copy
+
+    def get_as_liblinear_problem(self):
+        data_frame = self.get_data_frame()
+
+        y = data_frame[self.__class_attr].values.tolist()
+        x = data_frame.iloc[:, data_frame.columns != self.__class_attr].values.tolist()
+
+        return problem(y, x)
+
+    def get_as_vw_data(self, ignore_label=False):
+        data_frame = self.get_data_frame()
+        num_features = len(list(data_frame.columns)) - 1  # Discarding the label column
+
+        data = ''
+
+        for idx_row, row in data_frame.iterrows():
+            line = ''
+
+            if not ignore_label:
+                line = '%s ' % row[self.__class_attr]
+
+            line += 'ex%s|f' % idx_row
+
+            for idx_feature in range(num_features):
+                if row[idx_feature] != 0:
+                    line += ' %d:%f' % (idx_feature + 1, row[idx_feature])
+
+            data += line + '\n'
+
+        return data
