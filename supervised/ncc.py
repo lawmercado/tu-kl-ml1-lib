@@ -18,17 +18,20 @@ class NCC(LinearClassifier):
 
         assert isinstance(train_data_handler, DataHandler), 'The training data should be an instance of DataHandler'
 
-        classes = train_data_handler.get_class_values()
-        class_attr = train_data_handler.get_class_attr()
-        data_frame = train_data_handler.get_data_frame()
+        classes = train_data_handler.get_label_values()
 
-        ns = []
+        ns = {}
 
         for y in classes:
-            ns.append(data_frame.loc[data_frame[class_attr] == y])
+            ns[y] = [instance for instance in train_data_handler.get_instances() if instance.get_label() == y]
 
-        for idx_y, y in enumerate(classes):
-            self.__centroids[y] = np.array(ns[idx_y].loc[:, ns[idx_y].columns != class_attr].sum())/len(ns[idx_y])
+        for y in ns:
+            nt = ns[y][0].get_data()
+
+            for i in range(1, len(ns[y])):
+                nt += ns[y][i].get_data()
+
+            self.__centroids[y] = nt/len(ns[y])
 
     def classify(self, test_data_handler):
         """
@@ -42,16 +45,15 @@ class NCC(LinearClassifier):
 
         assert self.__centroids is not None, 'You need train the algorithm first!'
 
-        test_data_frame = test_data_handler.get_data_frame()
-        class_attr = test_data_handler.get_class_attr()
+        test_instances = test_data_handler.get_instances(duplicate=True)
 
-        for idx_test_instance, test_instance in test_data_frame.iterrows():
+        for idx_test_instance, test_instance in enumerate(test_instances):
             closer_class = 0
             closer_distance = sys.maxsize
 
             for y in self.__centroids:
                 pa = self.__centroids[y]
-                pb = np.array(test_instance.loc[test_data_frame.columns != class_attr])
+                pb = test_instance.get_data()
 
                 distance = np.linalg.norm(pa - pb)
 
@@ -59,9 +61,9 @@ class NCC(LinearClassifier):
                     closer_distance = distance
                     closer_class = y
 
-            test_data_frame.loc[idx_test_instance, 'Sex'] = closer_class
+            test_instances[idx_test_instance].set_label(closer_class)
 
-        return DataHandler(test_data_frame, test_data_handler.get_class_attr())
+        return test_instances
 
     def get_named_centroids(self):
         positive_centroid = None

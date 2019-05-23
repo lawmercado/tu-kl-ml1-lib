@@ -2,7 +2,8 @@
 
 from abc import ABC, abstractmethod
 from ml.data.handler import DataHandler
-import pandas as pd
+import copy
+import numpy as np
 
 
 class Classifier(ABC):
@@ -34,6 +35,12 @@ class LinearClassifier(Classifier):
     def get_hyperplane_independent_term(self):
         raise NotImplementedError
 
+    def distance(self, x):
+        w = self.get_hyperplane_normal()
+        b = self.get_hyperplane_independent_term()
+
+        return (np.dot(w, x) + b) / np.linalg.norm(w)
+
 
 def crossvalidation(classifier, data_handler, num_folds):
     """
@@ -47,28 +54,27 @@ def crossvalidation(classifier, data_handler, num_folds):
     """
 
     assert isinstance(classifier, Classifier), 'The classifier must implement Classifier abc'
-    assert isinstance(data_handler, DataHandler), 'The dataset must be an instance of DataHandler'
+    assert isinstance(data_handler, DataHandler), 'The dataset must be an instance of SimpleDataHandler'
 
-    class_attr = data_handler.get_class_attr()
     folds = data_handler.stratify(num_folds)
 
     measurements = {'acc': [], 'f-measure': []}
 
     for idx_fold, fold in enumerate(folds):
-        test_data_handler = DataHandler(folds[idx_fold], class_attr)
+        test_instances = copy.deepcopy(folds[idx_fold])
+        train_instances = []
+        train_folds = [copy.deepcopy(fold) for i, fold in enumerate(folds) if i != idx_fold]
 
-        train_folds = [fold for i, fold in enumerate(folds) if i != idx_fold]
-        train_data_handler = DataHandler(pd.concat(train_folds), class_attr)
+        for train_fold in train_folds:
+            train_instances += train_fold
 
+        train_data_handler = DataHandler([instance.get_raw() for instance in train_instances], data_handler.get_columns(), data_handler.get_label_column())
         classifier.train(train_data_handler)
 
-        test_data_handler.set_default_classification(0)
-        classified_data_handler = classifier.classify(test_data_handler)
-        classified_data_frame = classified_data_handler.get_data_frame()
+        test_data_handler = DataHandler([instance.get_raw() for instance in test_instances], data_handler.get_columns(), data_handler.get_label_column())
+        classified_instances = classifier.classify(test_data_handler)
 
-        ref_data_frame = folds[idx_fold].copy()
-
-        measure = analyse_results(ref_data_frame, classified_data_frame, class_attr)
+        measure = analyse_results(copy.deepcopy(folds[idx_fold]), classified_instances)
 
         measurements['acc'].append(measure['acc'])
         measurements['f-measure'].append(measure['f-measure'])
@@ -76,13 +82,10 @@ def crossvalidation(classifier, data_handler, num_folds):
     return measurements
 
 
-def analyse_results(ref_data_frame, classified_data_frame, class_attr):
+def analyse_results(test_instances, classified_instances):
     """
     Analyse the classification data
 
-    :param DataFrame ref_data_frame: The reference data frame
-    :param DataFrame classified_data_frame: The classified data frame
-    :param string class_attr: The class attribute
     :return: A dict with the main statistics ('acc' and 'f-measure') for this data frames
     :rtype: dict
     """
@@ -93,28 +96,34 @@ def analyse_results(ref_data_frame, classified_data_frame, class_attr):
     false_negative = 0
     true_negative = 0
 
-    for idx_ref, ref_instance in ref_data_frame.iterrows():
-        if ref_instance[class_attr] == classified_data_frame.loc[idx_ref, class_attr]:
+    for i in range(len(test_instances)):
+        if test_instances[i].get_label() == classified_instances[i].get_label():
             correct_classifications = correct_classifications + 1
 
-        if ref_instance[class_attr] == 1 and classified_data_frame.loc[idx_ref, class_attr] == 1:
+        if test_instances[i].get_label() == 1 and classified_instances[i].get_label() == 1:
             true_positive = true_positive + 1
 
-        elif ref_instance[class_attr] == -1 and classified_data_frame.loc[idx_ref, class_attr] == 1:
+        elif test_instances[i].get_label() == -1 and classified_instances[i].get_label() == 1:
             false_positive = false_positive + 1
 
-        elif ref_instance[class_attr] == 1 and classified_data_frame.loc[idx_ref, class_attr] == -1:
+        elif test_instances[i].get_label() == 1 and classified_instances[i].get_label() == -1:
             false_negative = false_negative + 1
 
         else:
             true_negative = true_negative + 1
 
     # Generate the statistics
-    acc = correct_classifications / len(classified_data_frame)
+    acc = correct_classifications / len(classified_instances)
 
-    rev = true_positive / (true_positive + false_negative)
+    try:
+        rev = true_positive / (true_positive + false_negative)
+    except ZeroDivisionError:
+        rev = 0
 
-    prec = true_positive / (true_positive + false_positive)
+    try:
+        prec = true_positive / (true_positive + false_positive)
+    except ZeroDivisionError:
+        prec = 0
 
     try:
         f_measure = 2 * (prec * rev) / (prec + rev)
@@ -122,6 +131,7 @@ def analyse_results(ref_data_frame, classified_data_frame, class_attr):
         f_measure = 0
 
     return {'acc': acc, 'f-measure': f_measure}
+
 
 def repeated_crossvalidation(classifier, data_handler, num_folds, num_repetitions):
     """
