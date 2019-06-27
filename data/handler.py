@@ -40,7 +40,7 @@ class Instance:
 
 class DataHandler:
 
-    def __init__(self, raw_data, columns, label_column, idx_column=None):
+    def __init__(self, raw_data, columns, label_column, idx_column=None, replace_label=None):
         self.__columns = columns
         self.__label_column = label_column
         self.__instances = []
@@ -51,6 +51,9 @@ class DataHandler:
             row = [float(raw_data[i][j]) for j in range(len(raw_data[i])) if j != idx_column]
             label = row.pop(idx_label_column)
             data = row
+
+            if replace_label:
+                label = replace_label(label)
 
             self.__instances.append(Instance(data, label))
 
@@ -128,8 +131,10 @@ class DataHandler:
         return folds
 
     def sample(self, num_samples, repose=True):
-        instances = self.get_instances()
+        return DataHandler.sample_from_instances(self.get_instances(), num_samples, repose)
 
+    @staticmethod
+    def sample_from_instances(instances, num_samples, repose=True):
         sampled_instances = []
         repose_instances = []
 
@@ -194,15 +199,13 @@ class PandasDataHandler:
 
         assert isinstance(data_frame, pd.DataFrame), 'Data frame must be an instance of Pandas DataFrame'
 
-        copy = data_frame.copy(deep=True)
-
         if reset_index:
-            copy.reset_index(drop=True)
+            data_frame.reset_index(drop=True)
 
-        self.__data_frame = copy
+        self.__data_frame = data_frame
         self.__class_attr = class_attr
 
-    def get_data_frame(self):
+    def get_data_frame(self, copy=True):
         """
         Gets a copy of the DataFrame
 
@@ -211,7 +214,7 @@ class PandasDataHandler:
 
         """
 
-        return self.__data_frame.copy(deep=True)
+        return self.__data_frame.copy(deep=True) if copy else self.__data_frame
 
     def get_class_attr(self):
         return self.__class_attr
@@ -310,3 +313,21 @@ class PandasDataHandler:
             data += line + '\n'
 
         return data
+
+    def get_vectorized(self):
+        df = self.get_data_frame(copy=False)
+
+        X = df.loc[:, df.columns != self.get_class_attr()].values.transpose()
+        Y = df.loc[:, self.get_class_attr():].values.transpose()
+
+        return X, Y
+
+    def get_batches(self, batch_size):
+        df = self.get_data_frame().sample(frac=1)
+        num_batches = round(len(self.get_data_frame())/batch_size)
+        batches = []
+
+        for i in range(num_batches):
+            batches.append(PandasDataHandler(df[i*batch_size:(i+1)*batch_size], self.get_class_attr(), reset_index=False))
+
+        return batches
