@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class NN(Classifier):
 
-    def __init__(self, p=5, learning_factor=5, batch_size=50, num_iterations=100000, threshold=0.5):
+    def __init__(self, initialization_strategie, p=5, learning_factor=5, psi=0.5, batch_size=50, num_iterations=100000, threshold=0.5):
         self.__num_layers = 3
         self.__layers = [2, 5, 5, 1]
         self.__params = {}
@@ -19,6 +19,7 @@ class NN(Classifier):
 
         self.__p = p
         self.__learning_factor = learning_factor
+        self.__psi = psi
         self.__batch_size = batch_size
         self.__num_iterations = num_iterations
 
@@ -26,15 +27,23 @@ class NN(Classifier):
 
         self.__Yout = np.zeros((1, batch_size))
 
-        self.__setup()
+        self.__setup(initialization_strategie)
 
-    def __setup(self):
-        self.__params['W1'] = np.random.randn(self.__layers[1], self.__layers[0]) / np.sqrt(self.__layers[0])
+    def __setup(self, initialization_strategie):
+        self.__params['W1'] = initialization_strategie(self.__layers, 1)
         self.__params['b1'] = np.zeros((self.__layers[1], 1))
-        self.__params['W2'] = np.random.randn(self.__layers[2], self.__layers[1]) / np.sqrt(self.__layers[1])
+        self.__params['W2'] = initialization_strategie(self.__layers, 2)
         self.__params['b2'] = np.zeros((self.__layers[2], 1))
-        self.__params['W3'] = np.random.randn(self.__layers[3], self.__layers[2]) / np.sqrt(self.__layers[2])
+        self.__params['W3'] = initialization_strategie(self.__layers, 3)
         self.__params['b3'] = np.zeros((self.__layers[3], 1))
+
+        # Saves the initial deltas
+        self.__cache['dW1'] = np.zeros((self.__layers[1], self.__layers[0]))
+        self.__cache['db1'] = np.zeros((self.__layers[1], 1))
+        self.__cache['dW2'] = np.zeros((self.__layers[2], self.__layers[1]))
+        self.__cache['db2'] = np.zeros((self.__layers[2], 1))
+        self.__cache['dW3'] = np.zeros((self.__layers[3], self.__layers[2]))
+        self.__cache['db3'] = np.zeros((self.__layers[3], 1))
 
         return
 
@@ -87,12 +96,21 @@ class NN(Classifier):
         dJ_W1 = 1. / X.shape[1] * np.dot(dJ_U1, X.T)
         dJ_b1 = 1. / X.shape[1] * np.dot(dJ_U1, np.ones([dJ_U1.shape[1], 1]))
 
-        self.__params['W1'] = self.__params['W1'] - lr * dJ_W1
-        self.__params['b1'] = self.__params['b1'] - lr * dJ_b1
-        self.__params['W2'] = self.__params['W2'] - lr * dJ_W2
-        self.__params['b2'] = self.__params['b2'] - lr * dJ_b2
-        self.__params['W3'] = self.__params['W3'] - lr * dJ_W3
-        self.__params['b3'] = self.__params['b3'] - lr * dJ_b3
+        # Updates the deltas
+        self.__cache['dW1'] = self.__psi * self.__cache['dW1'] + dJ_W1
+        self.__cache['db1'] = self.__psi * self.__cache['db1'] + dJ_b1
+        self.__cache['dW2'] = self.__psi * self.__cache['dW2'] + dJ_W2
+        self.__cache['db2'] = self.__psi * self.__cache['db2'] + dJ_b2
+        self.__cache['dW3'] = self.__psi * self.__cache['dW3'] + dJ_W3
+        self.__cache['db3'] = self.__psi * self.__cache['db3'] + dJ_b3
+
+        # Updates the weights according to the delta
+        self.__params['W1'] = self.__params['W1'] - lr * self.__cache['dW1']
+        self.__params['b1'] = self.__params['b1'] - lr * self.__cache['db1']
+        self.__params['W2'] = self.__params['W2'] - lr * self.__cache['dW2']
+        self.__params['b2'] = self.__params['b2'] - lr * self.__cache['db2']
+        self.__params['W3'] = self.__params['W3'] - lr * self.__cache['dW3']
+        self.__params['b3'] = self.__params['b3'] - lr * self.__cache['db3']
 
         return
 
@@ -137,6 +155,7 @@ class NN(Classifier):
         smallest_error = float('inf')
         greater_error_count = 0
         final_error = 0
+        acc_mean_train = 0
 
         accs_train = []
         accs_val = []
@@ -149,25 +168,20 @@ class NN(Classifier):
         df_val = df[limit:len(df)]
         dh_val = PandasDataHandler(df_val, dh.get_class_attr(), reset_index=False)
 
-        # Split the training set into batches
-        batches = dh_train.get_batches(self.__batch_size)
+        while greater_error_count < self.__p and t <= self.__num_iterations:
+            X, Y = dh_train.get_batch(self.__batch_size).get_vectorized()
+            # X, Y = dh_train.get_vectorized()
 
-        while greater_error_count < self.__p and t < self.__num_iterations:
-            acc_mean_train = 0
+            Yout, loss = self.__propagate(X, Y)
 
-            for batch in batches:
-                X, Y = batch.get_vectorized()
+            self.__backpropagate(X, Y, self.__learning_factor / t)
 
-                Yout, loss = self.__propagate(X, Y)
+            comp = self.__label(Yout)
 
-                self.__backpropagate(X, Y, self.__learning_factor / t)
-
-                comp = self.__label(Yout)
-
-                acc_mean_train += np.sum((comp == Y) / X.shape[1])
+            acc_mean_train += np.sum((comp == Y) / X.shape[1])
 
             if t % 250 == 0:
-                acc_mean_train = acc_mean_train / len(batches)
+                acc_mean_train = acc_mean_train / 250
 
                 print('Iteration %d' % t)
                 print('-- Accuracy in the training set is', acc_mean_train)
@@ -185,6 +199,7 @@ class NN(Classifier):
                     best_params = copy.deepcopy(self.__params)
 
                     accs_train.append(acc_mean_train)
+                    acc_mean_train = 0
                     accs_val.append(acc_val)
 
                     final_error = loss_val

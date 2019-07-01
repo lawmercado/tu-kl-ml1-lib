@@ -54,6 +54,7 @@ class DataHandler:
 
             if replace_label:
                 label = replace_label(label)
+                print('ois')
 
             self.__instances.append(Instance(data, label))
 
@@ -185,6 +186,20 @@ class DataHandler:
 
         self.__instances = instances
 
+    def get_vectorized(self):
+        instances = self.get_instances()
+
+        X = []
+        y = []
+
+        for instance in instances:
+            X.append(instance.get_data().tolist())
+            y.append(instance.get_label())
+
+        X = np.transpose(np.array(X))
+        y = np.array(y)
+
+        return X, y
 
 class PandasDataHandler:
 
@@ -322,12 +337,12 @@ class PandasDataHandler:
 
         return X, Y
 
-    def get_batches(self, batch_size):
-        df = self.get_data_frame().sample(frac=1)
-        num_batches = round(len(self.get_data_frame())/batch_size)
-        batches = []
+    def get_batch(self, batch_size):
+        df = self.get_data_frame().sample(n=batch_size)
 
-        for i in range(num_batches):
-            batches.append(PandasDataHandler(df[i*batch_size:(i+1)*batch_size], self.get_class_attr(), reset_index=False))
+        return PandasDataHandler(df, self.get_class_attr(), reset_index=False)
 
-        return batches
+    def as_data_handler(self):
+        df = self.get_data_frame()
+
+        return DataHandler(df.values.tolist(), df.columns.tolist(), self.get_class_attr())

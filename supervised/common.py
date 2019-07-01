@@ -1,7 +1,7 @@
 #! /usr/bin/python
 
 from abc import ABC, abstractmethod
-from ml.data.handler import DataHandler
+from ml.data.handler import DataHandler, PandasDataHandler
 import copy
 import numpy as np
 
@@ -54,7 +54,7 @@ def crossvalidation(classifier, data_handler, num_folds):
     """
 
     assert isinstance(classifier, Classifier), 'The classifier must implement Classifier abc'
-    assert isinstance(data_handler, DataHandler), 'The dataset must be an instance of SimpleDataHandler'
+    assert isinstance(data_handler, DataHandler) or isinstance(data_handler, PandasDataHandler), 'The dataset must be an instance of DataHandler'
 
     folds = data_handler.stratify(num_folds)
 
