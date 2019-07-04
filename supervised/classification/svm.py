@@ -1,7 +1,7 @@
 #! /usr/bin/python
 
 import numpy as np
-from ml.supervised.common import LinearClassifier
+from ml.supervised.classification.common import LinearClassifier
 from ml.data.handler import DataHandler
 import random
 

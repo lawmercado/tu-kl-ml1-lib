@@ -1,7 +1,7 @@
 #! /usr/bin/python
 
 import numpy as np
-from ml.supervised.common import Classifier
+from ml.supervised.classification.common import Classifier
 from ml.data.handler import DataHandler
 from sklearn.svm import SVC
 

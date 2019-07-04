@@ -2,7 +2,7 @@
 
 import numpy as np
 from ml.data.handler import PandasDataHandler
-from ml.supervised.common import Classifier
+from ml.supervised.classification.common import Classifier
 import logging
 import copy
 

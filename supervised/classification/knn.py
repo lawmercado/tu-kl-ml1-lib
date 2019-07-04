@@ -1,8 +1,7 @@
 #! /usr/bin/python
 
 import numpy as np
-from ml.supervised.common import Classifier
-from ml.data.handler import DataHandler
+from ml.supervised.classification.common import Classifier
 import sys
 
 
